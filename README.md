@@ -1,8 +1,7 @@
 # Diversified Portfolio Risk Modeling and Optimization
 
-## Overview
-
-This repository contains the analysis, code, and results from the research paper *"Risk Modeling and Optimization of a Diversified Portfolio: Financial Services, Technology, and Real Estate Sectors."* The study explores quantitative portfolio management strategies, focusing on equally weighted and risk-parity approaches, and evaluates the performance of different sectors: Technology, Financial Services, and Real Estate.
+This repository contains the analysis, code, and results from the research paper *"Risk Modeling and Optimization of a Diversified Portfolio: Financial Services, Technology, and Real Estate Sectors."* 
+The study explores quantitative portfolio management strategies, focusing on equally weighted and risk-parity approaches, and evaluates the performance of different sectors: Technology, Financial Services, and Real Estate.
 
 The main methodologies employed include:
 
