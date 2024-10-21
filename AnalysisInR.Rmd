@@ -1,0 +1,863 @@
+---
+title: "FinalPapar-HUYNH-CodeOnly"
+author: "Sokpheanal Huynh"
+date: "2024-10-14"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+library(knitr)
+library(kableExtra)
+library(quantmod)    # For data download and manipulation
+library(xts)         # For handling time-series data
+library(ghyp)        # For fitting distributions and risk measures
+library(timeSeries)  # For time series and financial data manipulation
+library(fBasics)     # For statistical and risk measures
+library(fExtremes)   # For extreme value theory analysis
+library(evir)        # For EVT analysis
+library(ismev)       # For modeling extreme events
+library(forecast)    # For ARIMA models
+library(tseries)     # For additional time series functions
+library(zoo)         # For manipulation of irregular time-series data
+library(quadprog)    # For quadratic programming and optimization
+library(ggplot2)     # For creating scatter plots
+library(reshape2)    # For reshaping data for visualization
+library(gridExtra)   # For arranging multiple plots
+library(grid)
+
+rm(list = ls())
+options(scipen = 999)
+knitr::opts_chunk$set(results = 'hold', echo = FALSE)
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Set the time range for analysis
+start_date <- as.Date("2015-12-01")
+end_date <- as.Date("2024-09-21")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+getSymbols("JPM", src = "yahoo", from = start_date, to = end_date)
+JPM_adj <- Ad(JPM)
+
+getSymbols("GS", src = "yahoo", from = start_date, to = end_date)
+GS_adj <- Ad(GS)
+
+getSymbols("AMZN", src = "yahoo", from = start_date, to = end_date)
+AMZN_adj <- Ad(AMZN)
+
+getSymbols("NVDA", src = "yahoo", from = start_date, to = end_date)
+NVDA_adj <- Ad(NVDA)
+
+getSymbols("CCI", src = "yahoo", from = start_date, to = end_date)
+CCI_adj <- Ad(CCI)
+
+getSymbols("AMT", src = "yahoo", from = start_date, to = end_date)
+AMT_adj <- Ad(AMT)
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+str(JPM)
+dim(JPM)
+names(JPM)
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+multi <- merge(JPM_adj, GS_adj, AMZN_adj, NVDA_adj, CCI_adj, AMT_adj)
+colnames(multi) <- c("JPM.Adjusted", "GS.Adjusted", "AMZN.Adjusted", "NVDA.Adjusted", "CCI.Adjusted", "AMT.Adjusted")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+mat.price <- matrix(multi, nrow(multi))  # Transform xts object to a matrix
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+prc2ret <- function(x) Delt(x)
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+mat.ret <- apply(mat.price, 2, function(x) {prc2ret(c(x))})
+mat.ret <- mat.ret[-1,]
+colnames(mat.ret) <- c('JPM', 'GS', 'AMZN', 'NVDA', 'CCI', 'AMT')
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+returns <- xts(mat.ret, order.by = index(multi)[-1])
+kable(returns[1:4],
+      digits = 5,
+      caption = "Returns Matrix",
+      format = "pipe")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Calculate equally-weighted portfolio
+equal_weights <- rep(1/ncol(returns), ncol(returns))
+equal_weighted_returns <- rowSums(returns * equal_weights)
+
+# Cumulative returns for equally weighted portfolio
+equal_weighted_cumulative <- cumprod(1 + equal_weighted_returns) - 1
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Risk-parity portfolio
+cov_matrix <- cov(returns, use = "pairwise.complete.obs")
+
+#Risk-parity objective function
+risk_parity_objective <- function(weights, cov_matrix) {
+  portfolio_risk <- sqrt(t(weights) %*% cov_matrix %*% weights)
+  marginal_risk <- (cov_matrix %*% weights) / as.numeric(portfolio_risk)
+  risk_contribution <- weights * marginal_risk
+  equal_risk <- rep(portfolio_risk / length(weights), length(weights))  # Create equal risk contribution
+  sum((risk_contribution - equal_risk)^2)  # Ensure both vectors are of equal length
+}
+
+# Solve for risk-parity weights
+initial_weights <- rep(1/ncol(returns), ncol(returns))
+optim_result <- optim(par = initial_weights, fn = risk_parity_objective, cov_matrix = cov_matrix)
+risk_parity_weights <- optim_result$par
+risk_parity_weights <- risk_parity_weights / sum(risk_parity_weights)  # Normalize weights
+
+# Calculate risk-parity portfolio returns
+risk_parity_returns <- rowSums(returns * risk_parity_weights)
+
+# Cumulative returns for risk-parity portfolio
+risk_parity_cumulative <- cumprod(1 + risk_parity_returns) - 1
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+plot(index(returns), 
+     equal_weighted_cumulative, 
+     type = "l", 
+     col = "blue", 
+     ylab = "Cumulative Returns",
+     xlab = "Time",
+     main = "Portfolio Strategies Return Comparison",
+     )
+lines(index(returns), risk_parity_cumulative, col = "red")
+legend("topleft", legend = c("Equally Weighted", "Risk-Parity"), col = c("blue", "red"), lty = 1)
+mtext("Figure 1. Portfolio Strategies Return Comparison Plot", side = 1, line = 4, cex = 0.8)
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Calculate the final cumulative return for the equally weighted portfolio
+final_return_equally_weighted <- tail(equal_weighted_cumulative, 1)
+
+# Calculate the final cumulative return for the risk-parity portfolio
+final_return_risk_parity <- tail(risk_parity_cumulative, 1)
+
+# Create a data frame to store and display the final returns
+final_returns_table <- data.frame(
+  Strategy = c("Equally Weighted", "Risk Parity"),
+  Final_Return = c(final_return_equally_weighted, final_return_risk_parity)
+)
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+kable(final_returns_table,
+      format = "pipe",  
+      caption = "Cumulative Returns Comparison Between Portfolio Strategies",
+      digits = 5,
+      col.names = c("Strategy", "Cumulative Return")
+      ) %>%    
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                position = "center",
+                font_size = 12,
+                latex_options = "scale_down") %>%
+  column_spec(1, width = "6cm") %>%
+  column_spec(2, width = "6cm")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Group stocks into sectors
+financial_services <- returns[, c("JPM", "GS")]
+technology <- returns[, c("AMZN", "NVDA")]
+real_estate <- returns[, c("CCI", "AMT")]
+
+# 1. Calculate correlation between returns of stocks within each sector
+financial_corr <- cor(financial_services, use = "pairwise.complete.obs")
+technology_corr <- cor(technology, use = "pairwise.complete.obs")
+real_estate_corr <- cor(real_estate, use = "pairwise.complete.obs")
+
+# Calculate average intra-sector correlation for each sector
+avg_financial_corr <- mean(financial_corr[upper.tri(financial_corr)], na.rm = TRUE)
+avg_technology_corr <- mean(technology_corr[upper.tri(technology_corr)], na.rm = TRUE)
+avg_real_estate_corr <- mean(real_estate_corr[upper.tri(real_estate_corr)], na.rm = TRUE)
+
+# Create a data frame to show average intra-sector correlations
+intra_sector_correlations <- data.frame(Sector = c("Financial Services", "Technology", "Real Estate"),
+                                        Average_Correlation = c(avg_financial_corr, avg_technology_corr,
+                                                                avg_real_estate_corr))
+
+kable(intra_sector_correlations,
+      format = "pipe",
+      caption = "Intra-Sector Average Correlations",
+      digits = 5,
+      col.names = c("Sector", "Average Correlation")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                position = "center",
+                font_size = 12,
+                latex_options = "scale_down") %>%
+  column_spec(1, width = "6cm") %>%  
+  column_spec(2, width = "6cm")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Remove rows with non-finite values (NA, NaN, Inf) from the data
+financial_services_df <- na.omit(data.frame(JPM = financial_services[, "JPM"], GS = financial_services[, "GS"]))
+technology_df <- na.omit(data.frame(AMZN = technology[, "AMZN"], NVDA = technology[, "NVDA"]))
+real_estate_df <- na.omit(data.frame(CCI = real_estate[, "CCI"], AMT = real_estate[, "AMT"]))
+
+# Define a function to create scatter plots for intra-sector correlations
+create_scatter_plot <- function(data, title, xlim_values, ylim_values) {
+  ggplot(data, aes(x = data[, 1], y = data[, 2])) +
+    geom_point(color = "skyblue", size = 1) +
+    geom_smooth(method = "lm", se = FALSE, color = "red") +
+    xlim(xlim_values) + ylim(ylim_values) +
+    labs(title = title, x = colnames(data)[1], y = colnames(data)[2], caption = "Figure 2. Intra-Sector Correlations") +
+    theme_minimal() +
+    theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14))
+}
+
+# Create scatter plots with filtered data
+financial_plot <- create_scatter_plot(financial_services_df, "Financial Services: JPM vs GS", c(-0.05, 0.05), c(-0.05, 0.05))
+technology_plot <- create_scatter_plot(technology_df, "Technology: AMZN vs NVDA", c(-0.1, 0.1), c(-0.1, 0.1))
+real_estate_plot <- create_scatter_plot(real_estate_df, "Real Estate: CCI vs AMT", c(-0.05, 0.05), c(-0.05, 0.05))
+
+# Arrange the intra-sector scatter plots in a grid
+grid.arrange(financial_plot, technology_plot, real_estate_plot, ncol = 2)
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Calculate mean return series for each sector
+financial_sector_return <- rowMeans(financial_services, na.rm = TRUE)
+technology_sector_return <- rowMeans(technology, na.rm = TRUE)
+real_estate_sector_return <- rowMeans(real_estate, na.rm = TRUE)
+
+# Combine sector return series into a matrix
+sector_returns <- cbind(financial_sector_return, technology_sector_return, real_estate_sector_return)
+colnames(sector_returns) <- c("Financial Services", "Technology", "Real Estate")
+
+# Calculate inter-sector correlation matrix
+inter_sector_corr <- cor(sector_returns, use = "pairwise.complete.obs")
+
+# Print inter-sector correlation matrix
+kable(inter_sector_corr,
+      format = "pipe",
+      caption = "Inter-Sector Correlation Matrix",
+      digits = 5,
+      col.names = c("Financial Services", "Technology", "Real Estate")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                position = "center",
+                font_size = 12,
+                latex_options = "scale_down") %>%
+  column_spec(1, width = "3cm") %>%  
+  column_spec(2, width = "3cm") %>% 
+  column_spec(3, width = "3cm") %>% 
+  column_spec(4, width = "3cm")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Create scatter plots between sectors
+sector_return_df <- na.omit(data.frame(Financial_Services = financial_sector_return,
+                                       Technology = technology_sector_return, Real_Estate = real_estate_sector_return))
+
+# Scatter Plot: Financial Services vs. Technology
+fs_vs_tech_plot <- ggplot(sector_return_df, aes(x = Financial_Services, y = Technology)) +
+  geom_point(color = "skyblue", size = 1) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "Financial vs. Technology Returns", x = "Financial Services", y = "Technology") +
+  theme_minimal() +
+  theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
+  xlim(-0.05, 0.05) + ylim(-0.05, 0.05)
+
+# Scatter Plot: Financial Services vs. Real Estate
+fs_vs_re_plot <- ggplot(sector_return_df, aes(x = Financial_Services, y = Real_Estate)) +
+  geom_point(color = "green", size = 1) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "Financial vs. Real Estate Returns", x = "Financial Services", y = "Real Estate") +
+  theme_minimal() +
+  theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
+  xlim(-0.05, 0.05) + ylim(-0.05, 0.05)
+
+# Scatter Plot: Technology vs. Real Estate
+tech_vs_re_plot <- ggplot(sector_return_df, aes(x = Technology, y = Real_Estate)) +
+  geom_point(color = "orange", size = 1) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "Technology vs. Real Estate Returns",
+       x = "Technology",
+       y = "Real Estate",
+       caption = "Figure 3. Inter-Sector Correlations") +
+  theme_minimal() +
+  theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
+  xlim(-0.05, 0.05) + ylim(-0.05, 0.05)
+
+# Arrange inter-sector scatter plots in a grid
+grid.arrange(fs_vs_tech_plot, fs_vs_re_plot, tech_vs_re_plot, ncol = 2)
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Calculate the mean return series for each sector
+financial_sector_return <- rowMeans(financial_services, na.rm = FALSE)
+technology_sector_return <- rowMeans(technology, na.rm = FALSE)
+real_estate_sector_return <- rowMeans(real_estate, na.rm = FALSE)
+
+# Calculate the standard deviation (risk) for each sector return series
+financial_risk <- sd(financial_sector_return, na.rm = TRUE)
+technology_risk <- sd(technology_sector_return, na.rm = TRUE)
+real_estate_risk <- sd(real_estate_sector_return, na.rm = TRUE)
+
+# Create a data frame to compare sector risks using standard deviation
+sector_risks <- data.frame(Sector = c("Financial Services", "Technology", "Real Estate"),
+                           Risk = c(financial_risk, technology_risk, real_estate_risk))
+kable(sector_risks,
+      format = "pipe",
+      caption = "Sector Risks",
+      digits = 5,
+      colnames = c("Sector", "Risk")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                position = "center",
+                font_size = 12,
+                latex_options = "scale_down") %>%
+  column_spec(1, width = "6cm") %>%  
+  column_spec(2, width = "6cm")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Define a confidence level
+confidence_level <- 0.95
+
+# Calculate VaR for Each Sector
+# Function to calculate VaR
+calc_VaR <- function(returns, confidence_level) {
+  return(-quantile(returns, probs = 1 - confidence_level, na.rm = TRUE))  # Negative to indicate loss
+}
+
+# Calculate VaR for each sector at the given confidence level
+VaR_financial <- calc_VaR(financial_sector_return, confidence_level)
+VaR_technology <- calc_VaR(technology_sector_return, confidence_level)
+VaR_real_estate <- calc_VaR(real_estate_sector_return, confidence_level)
+
+# Create a data frame to show VaR for each sector
+VaR_by_sector <- data.frame(Sector = c("Financial Services", "Technology", "Real Estate"),
+                            VaR = c(VaR_financial, VaR_technology, VaR_real_estate))
+kable(VaR_by_sector,
+      digits = 5,
+      format = "pipe",
+      caption = "Value at Risk (VaR) by Sector",
+      col.names = c("Sector", "VaR")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                position = "center",
+                font_size = 12,
+                latex_options = "scale_down") %>%
+  column_spec(1, width = "6cm") %>%  
+  column_spec(2, width = "6cm")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Calculate CVaR for each sector
+# Function to calculate CVaR (Expected Shortfall)
+calc_CVaR <- function(returns, VaR) {
+  # Calculate mean of losses beyond the VaR threshold
+  return(-mean(returns[returns <= -VaR], na.rm = TRUE))  # Negative to indicate loss
+}
+
+# Calculate VaR for each sector
+CVaR_financial <- calc_CVaR(financial_sector_return, VaR_financial)
+CVaR_technology <- calc_CVaR(technology_sector_return, VaR_technology)
+CVaR_real_estate <- calc_CVaR(real_estate_sector_return, VaR_real_estate)
+
+# Create a data frame to show CVaR for each sector
+CVaR_by_sector <- data.frame(Sector = c("Financial Services", "Technology", "Real Estate"),
+                             CVaR = c(CVaR_financial, CVaR_technology, CVaR_real_estate))
+
+# Print the CVaR values for each sector
+kable(CVaR_by_sector,
+      digits = 5,
+      formet = "pipe",
+      caption = "Conditional Value at Risk (CVaR) by Sector",
+      col.names = c("Sector", "CVaR")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                position = "center",
+                font_size = 12,
+                latex_options = "scale_down") %>%
+  column_spec(1, width = "6cm") %>%  
+  column_spec(2, width = "3cm")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Define a function to calculate EVT-based VaR and CVaR for each sector
+calc_EVT_VaR_CVaR <- function(returns, confidence_level = 0.95) {
+  threshold <- quantile(returns, confidence_level, na.rm = TRUE)
+  gpd_fit <- gpd(returns, threshold = threshold)
+  risk_measures <- riskmeasures(gpd_fit, p = confidence_level)
+  return(risk_measures)
+}
+
+# Technology sector
+evt_tech <- calc_EVT_VaR_CVaR(technology, confidence_level = 0.95)
+
+# Real Estate sector
+evt_real_estate <- calc_EVT_VaR_CVaR(real_estate, confidence_level = 0.95)
+
+# Financial Services sector
+evt_financial <- calc_EVT_VaR_CVaR(financial_services, confidence_level = 0.95)
+
+# Summarize results
+tail_risk_summary <- data.frame(
+  Sector = c("Technology", "Real Estate", "Financial Services"),
+  EVT_VaR_95 = c(evt_tech[1], evt_real_estate[1], evt_financial[1]),   # VaR is the 1st element
+  EVT_CVaR_95 = c(evt_tech[2], evt_real_estate[2], evt_financial[2])   # CVaR (ES) is the 2nd element
+)
+
+kable(tail_risk_summary,
+      format = "pipe",
+      align = c('l', 'c', 'r'),
+      digits = c(0, 2, 5),
+      caption = "EVT-based Tail Risk Summary for Each Sector",
+      col.names = c("Sector", "VaR (95%)", "CVaR (95%)")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                position = "center",
+                font_size = 12,
+                latex_options = "scale_down") %>%
+  column_spec(1, width = "6cm") %>% 
+  column_spec(2, width = "2cm") %>%
+  column_spec(3, width = "2cm")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# 1. Calculate Sector Returns
+# Calculate the mean return series for Technology and Real Estate sectors
+tech_sector_return <- rowMeans(technology, na.rm = TRUE)
+real_estate_sector_return <- rowMeans(real_estate, na.rm = TRUE)
+
+# 2. Calculate Risk (Standard Deviation) for Each Sector
+# Calculate the standard deviation (volatility) of returns for each sector
+tech_risk <- sd(tech_sector_return, na.rm = TRUE)
+real_estate_risk <- sd(real_estate_sector_return, na.rm = TRUE)
+
+# 3. Calculate Mean Returns for Each Sector 
+# Calculate the average return for each sector
+tech_mean_return <- mean(tech_sector_return, na.rm = TRUE)
+real_estate_mean_return <- mean(real_estate_sector_return, na.rm = TRUE)
+
+# 4. Set Risk-Free Rate
+# Assume a risk-free rate of 0 for simplicity (or set to an actual value if known)
+# The 3-month treasury yield rate on September 23, 2024 is 4.53%.
+risk_free_rate <- 453 / 10000
+
+# 5. Calculate Sharpe Ratio for Each Sector 
+tech_sharpe_ratio <- (tech_mean_return - risk_free_rate) / tech_risk
+real_estate_sharpe_ratio <- (real_estate_mean_return - risk_free_rate) / real_estate_risk
+
+# 6. Create a Data Frame to Display Results
+sector_performance <- data.frame(
+  Sector = c("Technology", "Real Estate"),
+  Mean_Return = c(tech_mean_return, real_estate_mean_return),
+  Risk = c(tech_risk, real_estate_risk),
+  Sharpe_Ratio = c(tech_sharpe_ratio, real_estate_sharpe_ratio)
+)
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+kable(sector_performance, 
+      format = "pipe",
+      caption = "Sector Performance Summary",
+      col.names = c("Sector", "Mean Return", "Risk", "Sharpe Ratio"),
+      align = c('l', 'c', 'c', 'r'),
+      digits = 5) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                position = "center",
+                font_size = 12,
+                latex_options = "scale_down") %>%
+  column_spec(1, width = "3cm") %>%  
+  column_spec(2, width = "3cm") %>%  
+  column_spec(3, width = "3cm") %>%  
+  column_spec(4, width = "3cm")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# 7. Plot Risk-Return Trade-off
+## Create a scatter plot to visualize the risk-return trade-off
+ggplot(sector_performance, aes(x = Risk, y = Mean_Return, color = Sector)) +
+  geom_point(size = 5) +
+  geom_text(aes(label = Sector), vjust = -1.5, size = 5) +
+  labs(title = "Risk-Return Trade-off: Technology vs Real Estate",
+       x = "Risk (Standard Deviation)",
+       y = "Mean Return",
+       caption = "Figure 4. Risk-Return Trade-Off") +
+  theme_minimal() +
+  scale_color_manual(values = c("Technology" = "blue", "Real Estate" = "red")) +            
+  theme(plot.caption = element_text(hjust = 0.5, size = 10))  # Center the caption
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# 1. Calculate Mean Returns and Covariance Matrix 
+mean_returns <- colMeans(returns, na.rm = TRUE)  # Mean returns of each stock
+cov_matrix <- cov(returns, use = "pairwise.complete.obs")  # Covariance matrix of returns
+
+# 2. Setup for Mean-Variance Optimization 
+## Objective: Minimize portfolio variance (risk) while achieving a certain level of expected return
+### Define the constraint matrices for optimization
+Dmat <- cov_matrix  # Covariance matrix (quadratic term)
+dvec <- rep(0, ncol(returns))  # Linear term (zeros since we are minimizing variance)
+Amat <- cbind(rep(1, ncol(returns)), mean_returns)  # Constraints: Sum of weights = 1, and expected return constraint
+bvec <- c(1, mean(mean_returns))  # Constraint values: Sum of weights = 1, and desired expected return
+
+### Perform mean-variance optimization using quadprog
+result <- solve.QP(Dmat, dvec, Amat, bvec, meq = 1)
+
+### Extract optimized weights
+optimized_weights <- result$solution
+
+### Create a data frame to show the optimized weights
+optimized_weights_df <- data.frame(Stock = colnames(returns), Weights = optimized_weights)
+
+kable(optimized_weights_df,
+      caption = "Optimized Portfolio Weights Using Markowitz Mean-Variance Optimization",
+      digits = 5,
+      format = "pipe") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                position = "center",
+                font_size = 12,
+                latex_options = "scale_down") %>%
+  column_spec(1, width = "6cm") %>%  
+  column_spec(2, width = "6cm")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# 3. Aggregate Weights by Sector
+## Define sector groupings
+sector_map <- list(Financial_Services = c("JPM", "GS"),
+                   Technology = c("AMZN", "NVDA"),
+                   Real_Estate = c("CCI", "AMT"))
+
+# Calculate total weights for each sector
+sector_weights <- sapply(names(sector_map), function(sector) {
+  sum(optimized_weights[which(colnames(returns) %in% sector_map[[sector]])])
+})
+
+# Create a data frame to show sector-level weights (with row.names = FALSE to avoid adding index column)
+sector_weights_df <- data.frame(Sector = names(sector_map), Weight = sector_weights, row.names = NULL)
+
+# Create a data frame to show sector-level weights
+sector_weights_df <- data.frame(Sector = names(sector_map), Weight = sector_weights)
+kable(sector_weights_df[, c("Sector", "Weight")],
+      caption = "Optimized Sector Weights Using Markowitz Mean-Variance Optimization",
+      digits = 5,
+      format = "pipe",
+      row.names = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                position = "center",
+                font_size = 12,
+                latex_options = "scale_down") %>%
+  column_spec(1, width = "6cm") %>%  
+  column_spec(2, width = "6cm")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Securities grouped by sectors (using Adjusted Close prices)
+tech_stocks <- list("AMZN" = AMZN$AMZN.Adjusted, "NVDA" = NVDA$NVDA.Adjusted)
+real_estate_stocks <- list("CCI" = CCI$CCI.Adjusted, "AMT" = AMT$AMT.Adjusted)
+financial_stocks <- list("JPM" = JPM$JPM.Adjusted, "GS" = GS$GS.Adjusted)
+
+# Function to fit ARIMA and forecast for individual securities
+fit_arima_forecast <- function(stock_data, h = 30) {
+  forecasts <- list()
+  for (stock_name in names(stock_data)) {
+    stock_ts <- ts(stock_data[[stock_name]], frequency = 252)  # Assuming daily returns
+    # Manually specify ARIMA order 
+    arima_model <- Arima(stock_ts, order = c(1,1,1))
+    forecasts[[stock_name]] <- forecast(arima_model, h = h)
+  }
+  return(forecasts)
+}
+
+# Fit ARIMA and forecast for each sector (using Adjusted Close prices)
+tech_forecasts <- fit_arima_forecast(tech_stocks, h = 30)
+real_estate_forecasts <- fit_arima_forecast(real_estate_stocks, h = 30)
+financial_forecasts <- fit_arima_forecast(financial_stocks, h = 30)
+
+# Combine forecasts by sector
+sector_forecasts <- list(
+  "Technology" = tech_forecasts,
+  "Real Estate" = real_estate_forecasts,
+  "Financial Services" = financial_forecasts
+)
+
+## Plot individual stock forecasts for each sector
+plot_forecasts <- function(forecasts, custom_caption = NULL) {
+  plot_list <- list()  # Initialize an empty list to store plots
+  
+  for (stock_name in names(forecasts)) {
+    forecast_data <- forecasts[[stock_name]]
+    
+    # Create a plot for each stock
+    forecast_plot <- autoplot(forecast_data) +
+      ggtitle(paste("Forecast for", stock_name)) +
+      theme_minimal(base_size = 14) + 
+      ylab("Price") +
+      theme(
+        plot.title = element_text(size = 16, face = "bold"),
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14)
+      )
+    
+    # Add custom caption if provided
+    if (!is.null(custom_caption)) {
+      forecast_plot <- forecast_plot + labs(subtitle = custom_caption)
+    }
+    
+    # Store the plot in the list
+    plot_list[[stock_name]] <- forecast_plot
+  }
+  
+  return(plot_list)  # Return the list of plots
+}
+
+## Plot forecasts by sector
+tech_plots <- plot_forecasts(tech_forecasts)
+real_estate_plots <- plot_forecasts(real_estate_forecasts)
+financial_plots <- plot_forecasts(financial_forecasts)
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Technology Sector Grid
+grid.arrange(grobs = tech_plots, ncol = 1, bottom = "Figure 5. Technology Sector Forecasts")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Financial Services Sector Grid
+grid.arrange(grobs = financial_plots, ncol = 1, bottom = "Figure 6. Financial Services Sector Forecasts")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Real Estate Sector Grid
+grid.arrange(grobs = real_estate_plots, ncol = 1, , bottom = "Figure 7. Real Estate Sector Forecasts")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Accuracy for each security
+accuracy_by_security <- function(forecasts) {
+  accuracy_list <- list()
+  for (stock_name in names(forecasts)) {
+    accuracy_list[[stock_name]] <- accuracy(forecasts[[stock_name]])
+  }
+  return(accuracy_list)
+}
+
+# Calculate accuracy metrics for each sector
+tech_accuracy <- accuracy_by_security(tech_forecasts)
+real_estate_accuracy <- accuracy_by_security(real_estate_forecasts)
+financial_accuracy <- accuracy_by_security(financial_forecasts)
+
+# Combine accuracy results
+sector_accuracy <- list(
+  "Technology" = tech_accuracy,
+  "Real Estate" = real_estate_accuracy,
+  "Financial Services" = financial_accuracy
+)
+
+# Print accuracy metrics by sector
+## Function to display accuracy results using kable
+print_accuracy_table <- function(accuracy_list, sector_name) {
+  for (stock_name in names(accuracy_list)) {
+    # Create the dynamic table name with the incremented table number
+    table_caption <- paste(stock_name, "Accuracy Metrics")
+    
+    # Print the accuracy table with the dynamic table caption
+    print(
+      kable(accuracy_list[[stock_name]], 
+            caption = table_caption,  # Use dynamic table name
+            digits = 5,
+            col.names = c("Metric", "ME", "RMSE", "MAE", "MPE", "MAPE", "MASE", "ACF1")) %>%
+        kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                      position = "center",
+                      font_size = 12,
+                      latex_options = "scale_down") %>%
+        column_spec(1, width = "1.5cm") %>%  
+        column_spec(2, width = "1.5cm") %>%
+        column_spec(3, width = "1.5cm") %>%
+        column_spec(4, width = "1.5cm") %>%
+        column_spec(5, width = "1.5cm") %>%
+        column_spec(6, width = "1.5cm") %>%
+        column_spec(7, width = "1.5cm") %>%
+        column_spec(8, width = "1.5cm")
+    )
+    
+    cat("\n\n")  # Add spacing between tables
+  }
+}
+
+# Print accuracy metrics for each sector with kable
+print_accuracy_table(tech_accuracy, "Technology")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+print_accuracy_table(real_estate_accuracy, "Real Estate")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+print_accuracy_table(financial_accuracy, "Financial Services")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# 1. Identify High Market Volatility Periods
+## Calculate rolling standard deviation (volatility) of a market index (e.g., S&P 500)
+### For this example, let's use the mean of all sector returns as a proxy for market return
+market_return <- rowMeans(returns, na.rm = TRUE)
+rolling_volatility <- rollapply(market_return, width = 30, FUN = sd, by.column = FALSE, align = "right", na.rm = TRUE)
+
+### Define high volatility as the top 10% of rolling volatility values
+high_vol_threshold <- quantile(rolling_volatility, 0.9, na.rm = TRUE)
+
+### Identify dates corresponding to high volatility periods
+high_vol_dates <- index(rolling_volatility)[rolling_volatility >= high_vol_threshold]
+
+# 2. Calculate Sector Performance During High Volatility
+## Subset sector returns for high volatility periods
+tech_high_vol <- technology[high_vol_dates, ]
+real_estate_high_vol <- real_estate[high_vol_dates, ]
+financial_high_vol <- financial_services[high_vol_dates, ]
+
+## Calculate mean returns and standard deviation (risk) for each sector during high volatility
+tech_mean_high_vol <- colMeans(tech_high_vol, na.rm = TRUE)
+real_estate_mean_high_vol <- colMeans(real_estate_high_vol, na.rm = TRUE)
+financial_mean_high_vol <- colMeans(financial_high_vol, na.rm = TRUE)
+tech_risk_high_vol <- apply(tech_high_vol, 2, sd, na.rm = TRUE)
+real_estate_risk_high_vol <- apply(real_estate_high_vol, 2, sd, na.rm = TRUE)
+financial_risk_high_vol <- apply(financial_high_vol, 2, sd, na.rm = TRUE)
+
+## Create a data frame to compare performance during high volatility
+high_vol_performance <- data.frame(
+  Sector = c("Technology", "Real Estate", "Financial Services"),
+  Mean_Return_High_Volatility = c(mean(tech_mean_high_vol), mean(real_estate_mean_high_vol), mean(financial_mean_high_vol)),
+  Risk_High_Volatility = c(mean(tech_risk_high_vol), mean(real_estate_risk_high_vol), mean(financial_risk_high_vol))
+)
+
+## Print the high volatility performance summary
+kable(high_vol_performance,
+      caption = "Sector Performance During High Volatility Period",
+      digits = 5,
+      format = "pipe",
+      col.names = c("Sector", "Mean Return", "Risk High Volatility")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                position = "center",
+                font_size = 12,
+                latex_options = "scale_down") %>%
+  column_spec(1, width = "6cm") %>%
+  column_spec(2, width = "3cm") %>% 
+  column_spec(3, width = "6cm")
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# 3. Visualize the Impact of Market Volatility on Sector Risk
+## Plot sector-specific risk during high volatility
+ggplot(high_vol_performance, aes(x = Sector, y = Risk_High_Volatility, fill = Sector)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Sector Risk During High Market Volatility", y = "Risk (Standard Deviation)", x = "Sector",
+       caption = "Figure 8. Sector Risk During High Market Volatility") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Technology" = "orange", "Real Estate" = "green", "Financial Services" = "blue"))
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+unloadNamespace("forecast")
+unloadNamespace("tseries")
+unloadNamespace("quantmod")
+library(FRAPO)
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+ghypsim<-rghyp(1000)
+hypsim<-rhyp(1000)
+normsim<-rnorm(1000)
+nigsim<-rnig(1000)
+
+# Converting the returns series to a dataframe
+returns_df <- data.frame(Date = index(returns), coredata(returns))
+str(returns_df)
+
+# Get each security's individual return series
+returns.JPM <- returns_df[, c("Date", "JPM")]
+returns.GS <- returns_df[, c("Date", "GS")]
+returns.NVDA <- returns_df[, c("Date", "NVDA")]
+returns.AMZN <- returns_df[, c("Date", "AMZN")]
+returns.AMT <- returns_df[, c("Date", "AMT")]
+returns.CCI <- returns_df[, c("Date", "CCI")]
+
+returns.JPM <- na.omit(returns.JPM)
+returns.GS <- na.omit(returns.GS)
+returns.NVDA <- na.omit(returns.NVDA)
+returns.AMZN <- na.omit(returns.AMZN)
+returns.AMT <- na.omit(returns.AMT)
+returns.CCI <- na.omit(returns.CCI)
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Global variable to keep track of the figure count
+figure_count <- 9
+
+fit_and_plot_distributions <- function(returns, title) {
+  # Increment the global figure count
+  global.figure_count <<- figure_count
+  
+  # Fit Generalized Hyperbolic (GHYP)
+  fit_ghyp <- tryCatch({
+    fit.ghypuv(returns)
+  }, error = function(e) {
+    message("Error in fitting Generalized Hyperbolic: ", e)
+    return(NULL)
+  })
+  
+  # Fit Normal Inverse Gaussian (NIG)
+  fit_nig <- tryCatch({
+    fit.NIGuv(returns)
+  }, error = function(e) {
+    message("Error in fitting NIG: ", e)
+    return(NULL)
+  })
+
+  # Generate x values for plotting
+  x_vals <- seq(min(returns), max(returns), length.out = 100)
+  
+  # Plot Generalized Hyperbolic if the fit was successful
+  if (!is.null(fit_ghyp)) {
+    # Calculate GHYP density
+    ghyp_density <- dghyp(x_vals, fit_ghyp)
+    
+    # Plot the density of the fitted GHYP distribution
+    plot(x_vals, ghyp_density, type = "l", col = "blue", lwd = 2,
+         main = paste("Figure", figure_count, "-", title, "Suitable Distribution for Returns"),
+         xlab = "Returns", ylab = "Density")
+  }
+  
+  # Add Normal Inverse Gaussian if the fit was successful
+  if (!is.null(fit_nig)) {
+    # Calculate NIG density
+    nig_density <- dghyp(x_vals, fit_nig)
+    
+    # Overlay the density of the fitted NIG distribution
+    lines(x_vals, nig_density, col = "red", lwd = 2)
+  }
+  
+  # Add legend to distinguish between the two distributions
+  legend("topright", legend = c("GHYP", "NIG"), col = c("blue", "red"), lty = 1)
+  
+  # Increment the figure count globally
+  figure_count <<- figure_count + 1
+}
+```
+
+```{r, echo = TRUE, results = "hide", warning = FALSE, message = FALSE, fig.show = 'hide'}
+# Apply the function to each security
+fit.JPM <- fit_and_plot_distributions(returns.JPM$JPM, "JPM")
+fit.GS <- fit_and_plot_distributions(returns.GS$GS, "GS")
+fit.NVDA <- fit_and_plot_distributions(returns.NVDA$NVDA, "NVDA")
+fit.AMZN <- fit_and_plot_distributions(returns.AMZN$AMZN, "AMZN")
+fit.AMT <- fit_and_plot_distributions(returns.AMT$AMT, "AMT")
+fit.CCI <- fit_and_plot_distributions(returns.CCI$CCI, "CCI")
+```
